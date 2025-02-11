@@ -1,5 +1,8 @@
 <template>
   <div class="game">
+    <div v-if="isGenerating" class="loading-overlay">
+      <div class="loading-content">生成迷宫中...</div>
+    </div>
     <header class="game-header">
       <div class="game-info">
         <span class="level-number">第 {{ currentLevel }} 关</span>
@@ -50,7 +53,7 @@ import { useRoute } from 'vue-router'
 
 const route = useRoute()
 const currentLevel = ref(parseInt(route.query.level) || 1)
-const mazeSize = ref(10) // 迷宫大小
+const mazeSize = ref(Math.min(10 + Math.floor((currentLevel.value - 1) / 2), 20)) // 迷宫大小随关卡增加
 const maze = ref([]) // 迷宫数据
 const playerPosition = ref(0) // 玩家位置
 const startPosition = ref(0) // 起点位置
@@ -76,62 +79,83 @@ const getItemIcon = (item) => {
   return icons[item]
 }
 
+const isGenerating = ref(false) // 添加生成状态标记
+
+// 迷宫缓存
+const mazeCache = new Map()
+
 // 生成迷宫
-const generateMaze = () => {
+const generateMaze = async () => {
+  isGenerating.value = true
   const size = mazeSize.value
-  const newMaze = new Array(size * size).fill(1) // 初始化为墙
+  const cacheKey = `${size}-${currentLevel.value}`
 
-  const dfs = (x, y) => {
-    const directions = [
-      [0, -2], // 上
-      [2, 0],  // 右
-      [0, 2],  // 下
-      [-2, 0]  // 左
-    ].sort(() => Math.random() - 0.5)
-
-    for (const [dx, dy] of directions) {
-      const newX = x + dx
-      const newY = y + dy
-      if (newX >= 0 && newX < size && newY >= 0 && newY < size && newMaze[newY * size + newX] === 1) {
-        newMaze[newY * size + newX] = 0 // 设置为路径
-        newMaze[(y + dy/2) * size + (x + dx/2)] = 0 // 打通墙
-        dfs(newX, newY)
-      }
-    }
+  // 检查缓存
+  if (mazeCache.has(cacheKey)) {
+    maze.value = mazeCache.get(cacheKey)
+    playerPosition.value = startPosition.value
+    isGenerating.value = false
+    return
   }
 
-  // 从左上角开始生成
-  newMaze[0] = 0
-  dfs(0, 0)
+  const newMaze = new Array(size * size).fill(1)
+  const branchProbability = Math.min(0.3 + (currentLevel.value - 1) * 0.05, 0.8)
+  const timeout = setTimeout(() => {
+    if (isGenerating.value) {
+      isGenerating.value = false
+      alert('迷宫生成超时，请重试')
+    }
+  }, 5000) // 5秒超时
 
-  // 设置起点和终点
-  startPosition.value = 0
-  endPosition.value = size * size - 1
+  try {
+    // 简化的迷宫生成算法
+    const generatePath = () => {
+      newMaze[0] = 0 // 起点
+      newMaze[size * size - 1] = 0 // 终点
+      let current = 0
+      const stack = [current]
+      const visited = new Set([current])
 
-  // 确保终点可达
-  const endX = size - 1
-  const endY = size - 1
-  
-  // 如果终点被墙包围，打通一条到终点的路
-  if (newMaze[endPosition.value] === 1) {
-    newMaze[endPosition.value] = 0
-    // 确保至少有一个相邻的格子是路径
-    if (endX > 0 && newMaze[endY * size + (endX - 1)] === 0) {
-      // 左边是路
-      newMaze[endY * size + endX] = 0
-    } else if (endY > 0 && newMaze[(endY - 1) * size + endX] === 0) {
-      // 上边是路
-      newMaze[endY * size + endX] = 0
-    } else {
-      // 如果周围都是墙，打通到左边的路
-      for (let x = endX; x >= 0; x--) {
-        newMaze[endY * size + x] = 0
+      while (stack.length > 0) {
+        current = stack.pop()
+        const x = current % size
+        const y = Math.floor(current / size)
+
+        const neighbors = [
+          [x, y - 2], // 上
+          [x + 2, y], // 右
+          [x, y + 2], // 下
+          [x - 2, y]  // 左
+        ].filter(([nx, ny]) => 
+          nx >= 0 && nx < size && ny >= 0 && ny < size && 
+          !visited.has(ny * size + nx)
+        )
+
+        if (neighbors.length > 0) {
+          stack.push(current)
+          const [nx, ny] = neighbors[Math.floor(Math.random() * neighbors.length)]
+          const nextCell = ny * size + nx
+          const wallX = (x + nx) / 2
+          const wallY = (y + ny) / 2
+
+          if (Math.random() < branchProbability) {
+            newMaze[wallY * size + wallX] = 0 // 打通墙
+            newMaze[nextCell] = 0 // 设置通路
+            visited.add(nextCell)
+            stack.push(nextCell)
+          }
+        }
       }
     }
-  }
 
-  maze.value = newMaze
-  playerPosition.value = startPosition.value
+    generatePath()
+    mazeCache.set(cacheKey, [...newMaze])
+    maze.value = newMaze
+    playerPosition.value = startPosition.value
+  } finally {
+    clearTimeout(timeout)
+    isGenerating.value = false
+  }
 }
 
 // 移动控制
@@ -213,8 +237,8 @@ const startTimer = () => {
 }
 
 // 生命周期钩子
-onMounted(() => {
-  generateMaze()
+onMounted(async () => {
+  await generateMaze()
   startTimer()
 })
 
@@ -387,6 +411,26 @@ onUnmounted(() => {
     &:hover {
       background: rgba(255, 255, 255, 0.2);
     }
+  }
+}
+.loading-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 999;
+
+  .loading-content {
+    color: white;
+    font-size: 24px;
+    padding: 20px;
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 10px;
   }
 }
 </style>
