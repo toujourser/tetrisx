@@ -1,0 +1,17 @@
+{
+  "pages": [
+    "pages/home/index",
+    "pages/game/index",
+    "pages/levels/index",
+    "pages/shop/index",
+    "pages/leaderboard/index"
+  ],
+  "window": {
+    "backgroundTextStyle": "light",
+    "navigationBarBackgroundColor": "#1a1a1a",
+    "navigationBarTitleText": "TetrisX",
+    "navigationBarTextStyle": "white"
+  },
+  "style": "v2",
+  "sitemapLocation": "sitemap.json"
+}
